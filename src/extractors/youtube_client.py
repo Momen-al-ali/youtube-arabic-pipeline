@@ -93,45 +93,37 @@ class YouTubeExtractor(BaseExtractor):
 
     #  Video list for a channel                                            
 
-    def fetch_video_ids(self, channel_id: str, max_results: int = 50) -> list[str]:
+    def fetch_video_ids(self, channel_id: str, max_results: int = 10) -> list[str]:
         """
-        Return the latest video IDs for a channel.
-        max_results capped at 50 per API call (YouTube limit).
+        Fetch latest video IDs using the uploads playlist — no quota restrictions.
+        Every channel has an uploads playlist: channel_id UC... → playlist UU...
         """
+        # Convert channel_id to uploads playlist_id
+        playlist_id = "UU" + channel_id[2:]
+
         video_ids = []
-        next_page_token = None
 
-        while True:
-            for attempt in range(self.MAX_RETRIES):
-                try:
-                    response = (
-                        self.youtube.search()
-                        .list(
-                            part="id",
-                            channelId=channel_id,
-                            type="video",
-                            order="date",
-                            maxResults=min(max_results, 50),
-                            pageToken=next_page_token,
-                        )
-                        .execute()
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                response = (
+                    self.youtube.playlistItems()
+                    .list(
+                        part="contentDetails",
+                        playlistId=playlist_id,
+                        maxResults=min(max_results, 50),
                     )
+                    .execute()
+                )
 
-                    for item in response.get("items", []):
-                        video_ids.append(item["id"]["videoId"])
+                for item in response.get("items", []):
+                    video_ids.append(item["contentDetails"]["videoId"])
 
-                    next_page_token = response.get("nextPageToken")
-                    break
+                return video_ids
 
-                except HttpError as e:
-                    self._handle_http_error(e, channel_id, attempt)
+            except HttpError as e:
+                self._handle_http_error(e, channel_id, attempt)
 
-            if not next_page_token or len(video_ids) >= max_results:
-                break
-
-        return video_ids[:max_results]
-
-    #  Video statistics                                                    
+        return video_ids                                                
 
     def fetch_video_stats(self, video_ids: list[str]) -> list[dict]:
         """
